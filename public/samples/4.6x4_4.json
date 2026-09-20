@@ -6,6 +6,13 @@
     "y_cmt": "Note that the top left key is at [0,0] therefore, as the row increases, the y position decreases.",
     "y_algo": "-y*key_1u - (12 if x == 0 else (10 if x == 1 else (2 if x == 2 else (4 if x >= 4 else 0))))",
     "skirt": true,
+    "wall_comment": "wall-frame mode (skirt off): the plate drops into this frame.",
+    "vertical_edges": true,
+    "flange_offset": 3,
+    "flange_z": 0,
+    "plate_lip": 1.5,
+    "plate_gap": 0.6,
+    "wall_base_z": 0,
     "linked_keys": [
         {
             "l": [ 4, 3, "br" ],
