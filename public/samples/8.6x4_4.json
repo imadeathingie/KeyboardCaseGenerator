@@ -10,6 +10,13 @@
     "x_rot_algo": "(y-1)*4 if x > 5 or (x == 5 and y == 4) else 10 if y == 0 else 5 if y == 1 else -5 if y == 3 else 0",
     "z_rot_algo": "-2*x if x > 5 or (x == 5 and y == 4) else 0",
     "skirt": true,
+    "wall_comment": "wall-frame mode (skirt off): the plate drops into this frame.",
+    "vertical_edges": true,
+    "flange_offset": 3,
+    "flange_z": 0,
+    "plate_lip": 1.5,
+    "plate_gap": 0.6,
+    "wall_base_z": 0,
     "skirt_flange": 3.5,
     "constant_thickness_walls": true,
     "skirt_profile": [

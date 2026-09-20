@@ -46,12 +46,31 @@ export interface Keylist {
   skirt_flare?: number;
   skirt_profile?: { fraction?: number; angle?: number; out?: number }[];
   constant_thickness_walls?: boolean;
+  /** "skirt" | "frame" | "lip". Falls back to the legacy `skirt` boolean. */
+  wall_style?: string;
+  /** Lip style: absolute z of the lip's bearing face (the rebate shoulder). */
+  lip_z?: number;
+  /** Lip style: how far the lip projects outward past the skirt. */
+  lip_width?: number;
+  /** Lip style: the lip's own vertical thickness. */
+  lip_thickness?: number;
+  /** Lip style: clearance between the case and the routed pocket. */
+  pocket_clearance?: number;
+  plank_thickness?: number;
+  /** Lip style: plank overhang past the case footprint, when no size is set. */
+  plank_margin?: number;
+  /** Lip style: explicit plank [x, y] size, centred on the case footprint. */
+  plank_size?: number[];
   tent_angle?: number;
   pitch_angle?: number;
   plate_min_wall?: number;
   baseplate_thickness?: number;
   insert_clearance_d?: number;
   insert_hole_segments?: number;
+  cutouts?: unknown[];
+  additions?: unknown[];
+  /** Viewer colours per part group, as #rrggbb or #rrggbbaa. */
+  part_colors?: Record<string, string>;
   keylist: KeyEntry[];
   [k: string]: unknown;
 }
@@ -73,6 +92,9 @@ export interface KeyboardDef {
   inserts?: Record<string, number>[];
   legends?: { col: number; row: number; legend: string }[];
   switches?: { col: number; row: number; profile?: string; rot?: number }[];
+  cutouts?: unknown[];
+  /** Viewer colours per part group, as #rrggbb or #rrggbbaa. */
+  part_colors?: Record<string, string>;
   [k: string]: unknown;
 }
 

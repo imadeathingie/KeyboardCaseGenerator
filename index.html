@@ -24,45 +24,60 @@
     </header>
 
     <aside>
-      <div>
-        <label class="field-label" for="sample-select">Sample board</label>
-        <div class="row">
-          <select id="sample-select">
-            <option value="">&mdash; choose a sample &mdash;</option>
-          </select>
-          <button id="open-file" type="button" style="flex: 0 0 auto">Open JSON&hellip;</button>
-          <input id="file-input" type="file" accept=".json,application/json" hidden />
+      <div class="side-head">
+        <div>
+          <label class="field-label" for="sample-select">Board source</label>
+          <div class="row">
+            <select id="sample-select">
+              <option value="">&mdash; choose a sample &mdash;</option>
+            </select>
+            <button id="open-file" type="button" style="flex: 0 0 auto">Open&hellip;</button>
+            <button id="new-board" type="button" style="flex: 0 0 auto"
+              title="Start a blank board">New</button>
+            <input id="file-input" type="file" accept=".json,application/json" hidden />
+          </div>
+        </div>
+
+        <div id="entry-row" hidden>
+          <label class="field-label" for="entry-select">Board in this file</label>
+          <div class="row">
+            <select id="entry-select"></select>
+            <button id="add-entry" type="button" style="flex: 0 0 auto"
+              title="Add another board to this file">+</button>
+          </div>
         </div>
       </div>
 
-      <div id="entry-row" hidden>
-        <label class="field-label" for="entry-select">Board in this file</label>
-        <select id="entry-select"></select>
-      </div>
+      <nav id="tabs" class="tabs" role="tablist" aria-label="Editor sections"></nav>
 
-      <div style="display: flex; flex-direction: column; flex: 1; min-height: 0">
-        <label class="field-label" for="editor">Keyboard JSON</label>
-        <textarea id="editor" spellcheck="false"
-          placeholder="Paste a keyboard definition or keylist here&hellip;"></textarea>
-        <p class="hint">Edit freely, then rebuild &mdash; Ctrl+Enter works too.</p>
-      </div>
-
-      <div id="error-box" role="alert" hidden></div>
-
-      <button id="build" class="primary" type="button">Rebuild model</button>
-
-      <div>
-        <span class="field-label">Parts</span>
-        <div id="parts"></div>
-      </div>
-
-      <div>
-        <span class="field-label">Export</span>
-        <div class="row">
-          <button id="export-stl" type="button">Download STL</button>
-          <button id="export-json" type="button">Download JSON</button>
+      <div class="side-scroll">
+        <div id="panel-form" class="panel"></div>
+        <div id="panel-json" class="panel" hidden>
+          <label class="field-label" for="editor">Keyboard JSON</label>
+          <textarea id="editor" spellcheck="false"
+            placeholder="Paste a keyboard definition or keylist here&hellip;"></textarea>
+          <p class="hint">Edits here flow back into the tabs. Ctrl+Enter rebuilds.</p>
         </div>
-        <p class="hint">STL contains the parts currently shown, merged, in mm.</p>
+      </div>
+
+      <div class="side-foot">
+        <div id="error-box" role="alert" hidden></div>
+
+        <button id="build" class="primary" type="button">Rebuild model</button>
+
+        <div>
+          <span class="field-label">Parts</span>
+          <div id="parts"></div>
+        </div>
+
+        <div>
+          <span class="field-label">Export</span>
+          <div class="row">
+            <button id="export-stl" type="button">Download STL</button>
+            <button id="export-json" type="button">Download JSON</button>
+          </div>
+          <p class="hint">STL contains the parts currently shown, merged, in mm.</p>
+        </div>
       </div>
     </aside>
 

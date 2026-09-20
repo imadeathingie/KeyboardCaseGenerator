@@ -563,6 +563,176 @@ function buildTopSurface(keylistData: Keylist): TopBuild {
   return { top, holeVertIds };
 }
 
+// -------------------------------------------------------------- wall style
+
+export type WallStyle = 'skirt' | 'frame' | 'lip';
+
+/**
+ * Which case the board wants.
+ *
+ * `wall_style` is authoritative; without it the legacy `skirt` boolean still
+ * decides, so every board written before this existed keeps its meaning.
+ */
+export function wallStyle(data: Keylist): WallStyle {
+  const raw = data.wall_style;
+  if (raw !== undefined && raw !== null && String(raw) !== '') {
+    const s = String(raw).toLowerCase();
+    if (s === 'skirt' || s === 'frame' || s === 'lip') return s;
+    throw new Error(`wall_style: expected "skirt", "frame" or "lip", got "${raw}"`);
+  }
+  return (data.skirt ?? false) ? 'skirt' : 'frame';
+}
+
+/** Lip-style dimensions, resolved and checked once. */
+export interface LipSpec {
+  /** Inward face of the wall, offset from the plate's edge. */
+  flange: number;
+  /** Wall thickness — the wall stands outside the plate edge by this much. */
+  wall: number;
+  /** Absolute z of the lip's bearing (under) face - the rebate shoulder. */
+  z: number;
+  /** How far the lip projects past the skirt. */
+  width: number;
+  /** The lip's vertical thickness. Its top is the plank's surface. */
+  thickness: number;
+}
+
+export function lipSpec(data: Keylist): LipSpec {
+  const spec: LipSpec = {
+    flange: Number(data.skirt_flange ?? 0) || 0,
+    wall: Number(data.wall_thickness ?? 2) || 0,
+    z: Number(data.lip_z ?? 0) || 0,
+    width: Number(data.lip_width ?? 3) || 0,
+    thickness: Number(data.lip_thickness ?? 2) || 0,
+  };
+  if (spec.width <= 0) {
+    throw new Error('lip_width must be greater than 0 — the lip has to have ' +
+      'something to bear on.');
+  }
+  if (spec.thickness <= 0) throw new Error('lip_thickness must be greater than 0');
+  if (spec.wall <= 0) {
+    throw new Error('wall_thickness must be greater than 0 in the lip style — ' +
+      'it is what gives the rim around the plate its substance.');
+  }
+  return spec;
+}
+
+/** Inner and outer offsets of the lip-style wall, and the lip's outer edge. */
+export function lipOffsets(lip: LipSpec) {
+  const inner = lip.flange;
+  const outer = inner + lip.wall;
+  return { inner, outer, lipOuter: outer + lip.width };
+}
+
+/**
+ * The lip cross-section at one perimeter station, as (outward offset, z) pairs
+ * in the order the surface is walked: up the inside of the wall from the
+ * plate's top edge, over the lip, and back down the outside to the plate's
+ * underside.
+ *
+ * The case is a plate hung from a lip. The lip is pinned to an absolute height
+ * — its top face IS the plank's surface — while the plate is wherever its own
+ * z, tent and pitch put it. So the wall has to travel from the plate to the lip
+ * and the length of that run differs at every station; its direction does too,
+ * since with a tilted plate the lip can be above the plate at one end of the
+ * board and below it at the other. That is why this is a mode and not a
+ * `skirt_profile` recipe — a profile alone cannot pin one end of the run to a
+ * flat machined shoulder while the other end follows the plate.
+ *
+ * The profile shapes the INNER face, walked from the plate towards the lip, so
+ * a positive angle opens the well out as it rises and leaves room for the keys
+ * to splay. The outer face is that same profile carried out by
+ * `wall_thickness`, so the wall is of a piece whatever the profile does.
+ */
+function lipRings(
+  lip: LipSpec, segs: SkirtSeg[], ztop: number, zbot: number,
+): Vec2[] {
+  const lipTop = lip.z + lip.thickness;
+  const wt = lip.wall;
+
+  // Inner face, from the plate's top edge to the bearing height. `rise` is
+  // signed: negative simply means the lip sits below the plate here, and the
+  // wall descends to meet it.
+  const rise = lip.z - ztop;
+  const innerPts: Vec2[] = [[lip.flange, ztop]];
+  let d = lip.flange;
+  let z = ztop;
+  for (let si = 0; si < segs.length; si++) {
+    const s = segs[si];
+    const dz = s.frac * rise;
+    // The outward component is taken from the DISTANCE travelled, not the
+    // signed rise. The run reverses direction along a board whose plate
+    // crosses the lip plane, and an angle that opened the well out on one side
+    // would pull the wall into the plate on the other. Positive is outward
+    // wherever the wall happens to be going.
+    d += s.out !== null ? s.out : Math.abs(dz) * Math.tan(rad(s.angle!));
+    z += dz;
+    if (si === segs.length - 1) z = lip.z;   // land exactly on the shoulder
+    innerPts.push([d, z]);
+  }
+
+  const iLip = d;
+  const oLip = iLip + wt;
+  const rings: Vec2[] = [...innerPts];
+  rings.push([iLip, lipTop]);        // up the inside of the lip
+  rings.push([oLip + lip.width, lipTop]);  // across its top, flush with the plank
+  rings.push([oLip + lip.width, lip.z]);   // down its outer edge
+  rings.push([oLip, lip.z]);               // back in along the bearing face
+  // The outer face is the inner one carried out by the wall thickness, walked
+  // back down. innerPts' last entry is already covered by the bearing face.
+  for (let i = innerPts.length - 2; i >= 0; i--) {
+    rings.push([innerPts[i][0] + wt, innerPts[i][1]]);
+  }
+  rings.push([lip.flange + wt, zbot]);     // straight past the plate's thickness
+  return rings;
+}
+
+/** How many rings `lipRings` produces, which is the same at every station. */
+function lipRingCount(segs: SkirtSeg[]): number {
+  return 2 * segs.length + 6;
+}
+
+/**
+ * How far the wall reaches out at or below the bearing face — what the hole
+ * through the board has to clear.
+ *
+ * Anything above `lip_z` is either the lip itself, which the rebate is cut for,
+ * or wall standing proud of the plank where the plate is higher than the lip.
+ * Neither has to pass through the hole.
+ */
+function lipWallReach(lip: LipSpec, segs: SkirtSeg[], rings: Vec2[]): number {
+  const s = segs.length;
+  let max = 0;
+  for (let i = 0; i < rings.length; i++) {
+    // Three of the lip's rings are skipped rather than filtered by height: its
+    // outer corners sit exactly ON the shoulder, and counting them would make
+    // the hole as wide as the rebate and leave nothing to bear on. The fourth,
+    // where the bearing face meets the wall, is KEPT — that is the wall's own
+    // outer face at the shoulder, and on a board whose plate rises above the
+    // lip it is the widest the wall ever gets. Dropping it undersized the hole
+    // by a whole wall thickness and the case pushed through the shoulder.
+    if (i >= s + 1 && i <= s + 3) continue;
+    const [d, z] = rings[i];
+    if (z > lip.z + 1e-9) continue;   // standing proud of the plank
+    if (d > max) max = d;
+  }
+  return max;
+}
+
+/** The lip's outer edge at this station — what the rebate has to clear. */
+function lipRebateReach(rings: Vec2[]): number {
+  let max = 0;
+  for (const [d] of rings) if (d > max) max = d;
+  return max;
+}
+
+/** The closest the wall comes to the plate's edge; negative means it cuts in. */
+function lipMinOffset(rings: Vec2[]): number {
+  let min = Infinity;
+  for (const [d] of rings) if (d < min) min = d;
+  return min;
+}
+
 // ------------------------------------------------------------ skirt profile
 
 interface SkirtSeg { frac: number; angle: number | null; out: number | null; }
@@ -1235,9 +1405,11 @@ function tiltAndOffset(data: Keylist, top: TopSurface): Vec3[] {
 
 export function buildShell(keylistData: Keylist): Mesh {
   const data = resolveKeylist(keylistData);
+  const style = wallStyle(data);
   let verticalEdges = data.vertical_edges ?? true;
-  // A fused skirt REQUIRES an aligned (vertical) perimeter.
-  if (data.skirt ?? false) verticalEdges = true;
+  // A fused skirt REQUIRES an aligned (vertical) perimeter, and the lip style
+  // hangs its walls off that same perimeter.
+  if (style === 'skirt' || style === 'lip') verticalEdges = true;
 
   const { top, holeVertIds } = buildTopSurface(data);
 
@@ -1265,7 +1437,10 @@ export function buildShell(keylistData: Keylist): Mesh {
   const faces: Face[] = [];
 
   // --- Optional fused SKIRT walls ----------------------------------------
-  const skirt = data.skirt ?? false;
+  // The lip style sweeps walls off the same perimeter; only the cross-section
+  // differs, so everything downstream treats the two alike.
+  const skirt = style === 'skirt' || style === 'lip';
+  const lip = style === 'lip' ? lipSpec(data) : null;
   const wallThickness = data.wall_thickness ?? 2;
   const skirtFlange = data.skirt_flange ?? 0;
   const baseZ = data.wall_base_z ?? 0;
@@ -1294,8 +1469,11 @@ export function buildShell(keylistData: Keylist): Mesh {
 
   // Intermediate rings per perimeter vertex (see core.py for the diagram).
   const segs = skirt ? skirtProfile(data) : [];
+  // The lip's run to the plate is a different length at every station, so its
+  // section is worked out per vertex; only the count is fixed.
+  const ringCount = lip === null ? segs.length + 1 : lipRingCount(segs);
   const rings: Map<number, number>[] =
-    Array.from({ length: segs.length + 1 }, () => new Map());
+    Array.from({ length: ringCount }, () => new Map());
   const rimRing = new Map<number, number>();
   const innerCols = new Map<number, number[]>();
 
@@ -1305,22 +1483,52 @@ export function buildShell(keylistData: Keylist): Mesh {
     const drop = ztop - baseZ;
 
     const ringDz: Vec2[] = [];
-    let d = skirtFlange;
-    let z = ztop;
-    rings[0].set(vi, vertices.length);
-    vertices.push([p[0] + nx * d, p[1] + ny * d, z]);
-    ringDz.push([d, z]);
-
-    for (let si = 0; si < segs.length; si++) {
-      const s = segs[si];
-      const dz = s.frac * drop;
-      const out = s.out !== null ? s.out : dz * Math.tan(rad(s.angle!));
-      d += out;
-      z -= dz;
-      if (si === segs.length - 1) z = baseZ; // land exactly on base_z
-      rings[si + 1].set(vi, vertices.length);
+    if (lip !== null) {
+      // No check on where the lip falls against the plate: it is free to sit
+      // above the plate at one station and below it at the next, which is the
+      // point of pinning it to an absolute height on a tilted board.
+      const section = lipRings(lip, segs, ztop, vertices[vi + n][2]);
+      const minD = lipMinOffset(section);
+      if (minD < -1e-9) {
+        throw new Error(
+          `the wall cuts ${(-minD).toFixed(2)}mm inside the plate's own edge ` +
+          `here. skirt_angle is measured from the plate towards the lip, so a ` +
+          'negative angle draws the wall in over the whole run — use a positive ' +
+          'angle to open the well out and leave room for the keys.');
+      }
+      for (let ri = 0; ri < section.length; ri++) {
+        const [d, z] = section[ri];
+        rings[ri].set(vi, vertices.length);
+        vertices.push([p[0] + nx * d, p[1] + ny * d, z]);
+        ringDz.push([d, z]);
+      }
+    } else {
+      let d = skirtFlange;
+      let z = ztop;
+      rings[0].set(vi, vertices.length);
       vertices.push([p[0] + nx * d, p[1] + ny * d, z]);
       ringDz.push([d, z]);
+
+      for (let si = 0; si < segs.length; si++) {
+        const s = segs[si];
+        const dz = s.frac * drop;
+        const out = s.out !== null ? s.out : dz * Math.tan(rad(s.angle!));
+        d += out;
+        z -= dz;
+        if (si === segs.length - 1) z = baseZ; // land exactly on base_z
+        rings[si + 1].set(vi, vertices.length);
+        vertices.push([p[0] + nx * d, p[1] + ny * d, z]);
+        ringDz.push([d, z]);
+      }
+    }
+
+    if (lip !== null) {
+      // Nothing hangs below the plate in this style, so the last ring closes
+      // straight onto the plate's own bottom perimeter: the band between them
+      // is the wall's underside, and the inner column has nowhere left to go.
+      rimRing.set(vi, vi + n);
+      innerCols.set(vi, [vi + n]);
+      continue;
     }
 
     rimRing.set(vi, vertices.length);
@@ -1430,14 +1638,253 @@ export function buildShellFromAny(data: Entry): Mesh {
  * Build the perimeter WALLS as a separate object: a recess frame the plate
  * drops into. One closed manifold per outer perimeter loop.
  */
-export function buildWalls(keylistData: Keylist): Mesh {
+/**
+ * One perimeter vertex's sweep frame: the plate's underside point there, the
+ * outward XY normal, the rim height, and the underside plane through it.
+ */
+interface WallFrame {
+  /**
+   * Datum every cross-section offset is measured from: a point on the plate's
+   * OUTER FACE. Not the underside point b — see wallLoopFrames.
+   */
+  bx: number; by: number;
+  nx: number; ny: number;
+  /**
+   * How far the plate's UNDERSIDE reaches past the outer face here. The plate
+   * is widest at the bottom on a tilted key, so the recess opens out by this
+   * much between the rim and the ledge rather than standing vertically at the
+   * widest point — which would leave a visible gap at the top of the plate.
+   */
+  bulge: number;
+  mitre: number;
+  rim: number;
+  /** This station's tangent plane to the plate underside. */
+  planeZ: (x: number, y: number) => number;
+  /** The plate's real underside at (x, y), or null if not over the plate. */
+  sampleZ: (x: number, y: number) => number | null;
+}
+
+/**
+ * The plate's underside as triangles, rebuilt the way buildShell builds it:
+ * each vertex pushed down its own offset normal, then the perimeter squared up
+ * when vertical_edges is set. Used to sit the support ledge on the surface the
+ * plate actually presents rather than on one station's extrapolated plane.
+ */
+function plateUndersidePoints(
+  data: Keylist, top: TopSurface, holeVertIds: Set<number>, verticalEdges: boolean,
+): Vec3[] {
+  const thickness = data.thickness ?? 5;
+  const unit = top.unitNormals();
+  const override = top.offsetNormal;
+
+  const bot: Vec3[] = top.points.map((p, vi) => {
+    const u = override.get(vi) ?? unit[vi];
+    return [p[0] - u[0] * thickness, p[1] - u[1] * thickness, p[2] - u[2] * thickness];
+  });
+  if (verticalEdges) {
+    for (const lp of perimeterLoops(top, holeVertIds)) {
+      for (const vi of lp) bot[vi] = [top.points[vi][0], top.points[vi][1], bot[vi][2]];
+    }
+  }
+  return bot;
+}
+
+function undersideTrisFrom(top: TopSurface, bot: Vec3[]): Vec3[][] {
+  const tris: Vec3[][] = [];
+  for (const f of top.faces) {
+    for (let i = 1; i + 1 < f.length; i++) {
+      tris.push([bot[f[0]], bot[f[i]], bot[f[i + 1]]]);
+    }
+  }
+  return tris;
+}
+
+/**
+ * Sit the ledge this far under the plate rather than exactly on it. Placing it
+ * flush leaves the two surfaces coincident, so the swept ledge grazes in and
+ * out of the plate by a few hundredths of a millimetre wherever the underside
+ * curves between samples — geometrically an intersection, and coincident faces
+ * are the kind of thing slicers handle badly. Well under one layer height, so
+ * the plate still seats on the ledge.
+ */
+const LEDGE_CLEARANCE = 0.05;
+
+/**
+ * Target spacing of ledge points across the ledge's width, in mm.
+ *
+ * The ledge used to be one quad spanning plate_gap to plate_gap - plate_lip.
+ * A quad is bilinear, so a wide one cannot follow a plate whose underside
+ * changes across it: at plate_lip 5 the interior sat 3.27mm INSIDE the plate
+ * while all four corners were within 0.15mm. Splitting the span into steps of
+ * about this size lets the ledge track the underside across its width.
+ */
+const LEDGE_STEP = 1.0;
+
+/** Ledge points across the width: one per LEDGE_STEP, at least two. */
+function ledgeStepCount(plateLip: number): number {
+  return Math.max(1, Math.ceil(Math.abs(plateLip) / LEDGE_STEP));
+}
+
+/**
+ * Extra wall stations where the ledge needs them.
+ *
+ * The ledge is swept as a straight edge between consecutive stations, so where
+ * the plate's underside dips between two of them the edge bows up through it.
+ * Moving the existing stations down to compensate was tried and rejected — it
+ * gouges the ledge without reducing crossings (see docs/skirt-off-walls.md).
+ * The spacing is the real problem, so add stations: bisect a segment while its
+ * ledge edge still bows, and let each new station sit on the underside like any
+ * other.
+ *
+ * Inserting on a straight run is harmless — the recess and outer faces stay on
+ * the same lines — and the baseplate is built from these same frames, so its
+ * footprint follows automatically.
+ */
+function subdivideForLedge(
+  frames: WallFrame[], inner: number, ledgeIn: number,
+): WallFrame[] {
+  const TOL = 0.02;      // mm of bow worth splitting for
+  const MAX_DEPTH = 4;   // up to 15 extra stations per segment
+  const SEG = 8;         // bow samples per test
+
+  const lerpFrame = (a: WallFrame, b: WallFrame, t: number): WallFrame => {
+    // Interpolate the normal ALREADY SCALED by its mitre, and carry mitre 1.
+    // Normalising it instead makes the offset longer than a straight
+    // interpolation, so the inserted station bulges off the line joining its
+    // neighbours — harmless at a convex corner, but at a reflex one it pushes
+    // the outer ring across itself and the baseplate then fails to
+    // triangulate. This way every offset point is the exact interpolation of
+    // the neighbouring stations' corresponding points, at any offset, so
+    // subdividing adds vertices along the swept surfaces without moving them.
+    const ax = a.nx * a.mitre, ay = a.ny * a.mitre;
+    const bx2 = b.nx * b.mitre, by2 = b.ny * b.mitre;
+    return {
+      bx: a.bx + (b.bx - a.bx) * t,
+      by: a.by + (b.by - a.by) * t,
+      nx: ax + (bx2 - ax) * t,
+      ny: ay + (by2 - ay) * t,
+      bulge: a.bulge + (b.bulge - a.bulge) * t,
+      mitre: 1,
+      rim: a.rim + (b.rim - a.rim) * t,
+      planeZ: (x, y) => a.planeZ(x, y) + (b.planeZ(x, y) - a.planeZ(x, y)) * t,
+      sampleZ: a.sampleZ,
+    };
+  };
+
+  // Must match ledgeHeights in buildWalls, or this is testing an edge the
+  // builder will not produce.
+  const ledgeZ = (f: WallFrame, base: number) => {
+    const off = (base + f.bulge) * f.mitre;
+    const x = f.bx + f.nx * off, y = f.by + f.ny * off;
+    const r = f.sampleZ(x, y);
+    const p = f.planeZ(x, y);
+    return r === null ? p : Math.min(p, r - LEDGE_CLEARANCE);
+  };
+
+  /** How far the ledge edge a->b rises above the underside, at one offset. */
+  const bowOf = (a: WallFrame, b: WallFrame, off: number) => {
+    const za = ledgeZ(a, off), zb = ledgeZ(b, off);
+    const ax = a.bx + a.nx * (off + a.bulge) * a.mitre, ay = a.by + a.ny * (off + a.bulge) * a.mitre;
+    const bx = b.bx + b.nx * (off + b.bulge) * b.mitre, by = b.by + b.ny * (off + b.bulge) * b.mitre;
+    let worst = 0;
+    for (let s = 1; s < SEG; s++) {
+      const t = s / SEG;
+      const r = a.sampleZ(ax + (bx - ax) * t, ay + (by - ay) * t);
+      if (r === null) continue;
+      const bow = za + (zb - za) * t - r;
+      if (bow > worst) worst = bow;
+    }
+    return worst;
+  };
+
+  const out: WallFrame[] = [];
+  const n = frames.length;
+
+  const refine = (
+    a: WallFrame, b: WallFrame, tLo: number, tHi: number, depth: number,
+  ) => {
+    if (depth >= MAX_DEPTH) return;
+    const fa = tLo === 0 ? a : lerpFrame(a, b, tLo);
+    const fb = tHi === 1 ? b : lerpFrame(a, b, tHi);
+    // Test across the ledge, not just along its two edges: the quad is
+    // bilinear, so it can bulge through the plate in the middle while both
+    // edges stay clear.
+    const mid = (inner + ledgeIn) / 2;
+    if (bowOf(fa, fb, inner) <= TOL && bowOf(fa, fb, mid) <= TOL &&
+        bowOf(fa, fb, ledgeIn) <= TOL) return;
+    const tm = (tLo + tHi) / 2;
+    refine(a, b, tLo, tm, depth + 1);
+    out.push(lerpFrame(a, b, tm));
+    refine(a, b, tm, tHi, depth + 1);
+  };
+
+  for (let i = 0; i < n; i++) {
+    out.push(frames[i]);
+    refine(frames[i], frames[(i + 1) % n], 0, 1, 0);
+  }
+  return out;
+}
+
+/** vertex -> the vertices sharing a face with it, from the top surface. */
+function vertexNeighbours(top: TopSurface): Map<number, Set<number>> {
+  const nbr = new Map<number, Set<number>>();
+  const link = (a: number, b: number) => {
+    let s = nbr.get(a);
+    if (s === undefined) { s = new Set(); nbr.set(a, s); }
+    s.add(b);
+  };
+  for (const f of top.faces) {
+    for (let i = 0; i < f.length; i++) {
+      for (let j = 0; j < f.length; j++) if (i !== j) link(f[i], f[j]);
+    }
+  }
+  return nbr;
+}
+
+/**
+ * Height of the plate's underside directly above (x, y), or null when that
+ * point is not over the plate at all (the ledge's outer edge usually sits out
+ * in the plate_gap). Barycentric point-in-triangle on the XY projection.
+ */
+function undersideSampleZ(x: number, y: number, tris: Vec3[][]): number | null {
+  let best: number | null = null;
+  for (const t of tris) {
+    const [a, b, c] = t;
+    const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    if (Math.abs(d) < 1e-12) continue;
+    const w0 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
+    if (w0 < -1e-9 || w0 > 1 + 1e-9) continue;
+    const w1 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
+    if (w1 < -1e-9 || w1 > 1 + 1e-9) continue;
+    const w2 = 1 - w0 - w1;
+    if (w2 < -1e-9 || w2 > 1 + 1e-9) continue;
+    const z = w0 * a[2] + w1 * b[2] + w2 * c[2];
+    // LOWEST sheet wins. Where the underside folds over itself in plan — the
+    // riser between two cells offset in y, for instance — several sheets cover
+    // the same (x, y) and the plate has material above each of them. A ledge
+    // rising from below has to clear the lowest of them; clearing only the
+    // highest leaves it buried in the plate under the fold.
+    if (best === null || z < best) best = z;
+  }
+  return best;
+}
+
+/**
+ * The OUTER perimeter loop(s), resolved to the frames the wall cross-section
+ * is swept along. Shared by buildWalls and wallOuterRings so the frame and the
+ * baseplate that closes it are derived from the same perimeter.
+ */
+function wallLoopFrames(keylistData: Keylist): WallFrame[][] {
   const data = resolveKeylist(keylistData);
   const thickness = data.thickness ?? 5;
-  const flangeOffset = (data.flange_offset ?? 0) || 0;
   const flangeZ = (data.flange_z ?? 0) || 0;
-  const plateLip = data.plate_lip ?? 1.5;
-  const baseZ = data.wall_base_z ?? 0;
+  // Resolved exactly as buildShell resolves it, so the frame is built around
+  // the outer face the shell actually produced.
+  const verticalEdges = (data.skirt ?? false) ? true : (data.vertical_edges ?? true);
+  // The ledge offsets, needed here so extra stations land where the ledge
+  // requires them and the baseplate inherits the same frame list.
   const plateGap = data.plate_gap ?? 0.25;
+  const plateLip = data.plate_lip ?? 1.5;
 
   const { top, holeVertIds } = buildTopSurface(data);
   let loops = perimeterLoops(top, holeVertIds);
@@ -1455,26 +1902,23 @@ export function buildWalls(keylistData: Keylist): Mesh {
     loops = loops.filter((_, i) => areas[i] >= 0.5 * amax);
   }
 
-  const vertices: Vec3[] = [];
-  const faces: Face[] = [];
-  const addVert = (p: Vec3) => { vertices.push(p); return vertices.length - 1; };
-
   const override = top.offsetNormal;
   const unit = top.unitNormals();
+  const botPts = plateUndersidePoints(data, top, holeVertIds, verticalEdges);
+  const underTris = undersideTrisFrom(top, botPts);
+  const neighbours = vertexNeighbours(top);
 
+  const out: WallFrame[][] = [];
   for (const rawLoop of loops) {
     const [loop, normals] = outwardNormalsXY(top.points, rawLoop);
-    const nLoop = loop.length;
-    if (nLoop < 3) continue;
+    if (loop.length < 3) continue;
 
-    // 6-point cross-section ring per perimeter vertex (see core.py diagram).
-    const rings: number[][] = [];
-    for (let i = 0; i < nLoop; i++) {
+    const frames: WallFrame[] = [];
+    for (let i = 0; i < loop.length; i++) {
       const vi = loop[i];
       const p = top.points[vi];
       const [nx, ny] = normals[i];
       const u = override.get(vi) ?? unit[vi];
-      const rim = p[2] + flangeZ;
 
       // The plate's true underside point at this perimeter vertex.
       const bx = p[0] - u[0] * thickness;
@@ -1482,32 +1926,260 @@ export function buildWalls(keylistData: Keylist): Mesh {
       const bz = p[2] - u[2] * thickness;
 
       const uz = Math.abs(u[2]) > 1e-6 ? u[2] : 1e-6;
-      const undersideZ = (x: number, y: number) =>
-        bz - (u[0] * (x - bx) + u[1] * (y - by)) / uz;
 
-      const at = (offset: number, z: number): Vec3 =>
-        [bx + nx * offset, by + ny * offset, z];
-      const atLedge = (offset: number): Vec3 => {
-        const x = bx + nx * offset;
-        const y = by + ny * offset;
-        return [x, y, undersideZ(x, y)];
+      // Datum: a point on the plate's OUTER FACE.
+      //
+      // This used to be the underside point b. On a tilted key b slides
+      // sideways from the top point by u_xy*thickness (~1.5-2mm at 20-30 deg
+      // and 4mm plate), so a recess measured from b was offset from a line the
+      // plate's face does not follow, and the wall cut through the plate — 34
+      // face crossings each at the two rotated keys of the staggered sample.
+      //
+      // With vertical edges the plate's outer face IS the vertical surface
+      // through the top perimeter point, so that is the datum. With sloped
+      // edges the face runs top -> b, and the recess has to clear both ends,
+      // so the outermost of the two along n wins.
+      const dTop = (p[0] - bx) * nx + (p[1] - by) * ny;
+      const useTop = verticalEdges || dTop > 0;
+      // Mitre. nx,ny is the unit bisector of the two adjacent edge normals, so
+      // an offset of d along it lands only d*cos(theta) from each EDGE. At the
+      // 1,0 / 2,0 riser of the staggered sample both ends of the riser carry
+      // the same bisector, (-0.64, 0.77) against the riser's own normal of
+      // (-0.98, 0.19), so the recess was offset by 0.773*plate_gap and the
+      // plate cut through it.
+      //
+      // Capped hard at 1.18. Full correction (1/cos) fixes that riser but is
+      // far too aggressive at the sharp corners of a thumb cluster, where it
+      // pushes the recess out until the fit goes loose and NEW overlaps appear:
+      // uncapped costs the 6x4_4 family 9 -> 21 crossings and opens the gap
+      // from 0.60 to 0.87mm. This cap is enough for the riser and little else.
+      const nxt = top.points[loop[(i + 1) % loop.length]];
+      const ex = nxt[1] - p[1], ey = -(nxt[0] - p[0]);
+      const em = Math.hypot(ex, ey);
+      const cosT = em > 1e-12 ? (nx * ex + ny * ey) / em : 1;
+      const mitre = 1 / Math.max(cosT, 0.85);
+      let dx = useTop ? p[0] : bx;
+      let dy = useTop ? p[1] : by;
+
+      // The outer face is not always the outermost thing about the plate.
+      // vertical_edges squares up the bottom vertices ON the perimeter, but
+      // every neighbouring INTERIOR vertex is still pushed down its own offset
+      // normal, which slides it sideways by |u_xy|*thickness — ~1.2mm on a key
+      // tilted 12°/8° with a 5mm plate. Where that pushes one past the
+      // perimeter, the underside bulges out through the recess, which is built
+      // from the perimeter polygon and cannot see it. Take the datum out to
+      // whatever the local underside actually reaches; this only ever moves
+      // outward, so it cannot tighten the fit anywhere.
+      let bulge = 0;
+      const local = neighbours.get(vi);
+      if (local !== undefined) {
+        for (const j of local) {
+          const q = botPts[j];
+          // Only a vertex whose TOP sits at or inside this station's face can
+          // be a bulge. Without that test, a face-neighbour is any vertex
+          // sharing a polygon — including the far side of a connector spanning
+          // a whole key pitch — and projecting another perimeter station onto
+          // this normal at a convex corner reads as 14mm of "bulge".
+          const tTop = (top.points[j][0] - dx) * nx + (top.points[j][1] - dy) * ny;
+          if (tTop > 1e-9) continue;
+          const d = (q[0] - dx) * nx + (q[1] - dy) * ny;
+          if (d > bulge) bulge = d;
+        }
+      }
+      frames.push({
+        bx: dx,
+        by: dy,
+        nx, ny,
+        bulge,
+        mitre,
+        rim: p[2] + flangeZ,
+        planeZ: (x: number, y: number) =>
+          bz - (u[0] * (x - bx) + u[1] * (y - by)) / uz,
+        sampleZ: (x: number, y: number) => undersideSampleZ(x, y, underTris),
+      });
+    }
+    out.push(subdivideForLedge(frames, plateGap, plateGap - plateLip));
+  }
+  return out;
+}
+
+/**
+ * The wall frame's OUTER face profile at one station, as (offset, z) pairs
+ * running rim -> base.
+ *
+ * Same shaping the fused skirt uses, so a board's `skirt_profile` /
+ * `skirt_angle` / `skirt_flare` describes the case whichever wall method is
+ * selected. It starts at `flange_offset` (the frame's face at the rim) and
+ * flares outward on the way down. With no profile set, skirtProfile yields a
+ * single zero-angle segment, so this is two points at the same offset — the
+ * plain vertical face the frame had before.
+ */
+function wallOuterProfile(
+  f: WallFrame, flangeOffset: number, baseZ: number, segs: SkirtSeg[],
+): [number, number][] {
+  const drop = f.rim - baseZ;
+  const out: [number, number][] = [[flangeOffset, f.rim]];
+  let d = flangeOffset;
+  let z = f.rim;
+  for (let si = 0; si < segs.length; si++) {
+    const sg = segs[si];
+    const dz = sg.frac * drop;
+    d += sg.out !== null ? sg.out : dz * Math.tan(rad(sg.angle!));
+    z -= dz;
+    if (si === segs.length - 1) z = baseZ;   // land exactly on wall_base_z
+    out.push([d, z]);
+  }
+  return out;
+}
+
+/**
+ * Points in one wall cross-section: the outer profile (one per segment, plus
+ * the rim) then inner_top, ledge_top, ledge_inner, inner_bottom. Exported so
+ * tooling can walk the wall mesh, which is emitted station by station.
+ */
+export function wallLedgeSteps(data: Entry): number {
+  return ledgeStepCount(resolveKeylist(data).plate_lip ?? 1.5);
+}
+
+export function wallRingSize(data: Entry): number {
+  const kl = resolveKeylist(data);
+  return skirtProfile(kl).length + ledgeStepCount(kl.plate_lip ?? 1.5) + 4;
+}
+
+export function buildWalls(keylistData: Keylist): Mesh {
+  const data = resolveKeylist(keylistData);
+  const flangeOffset = (data.flange_offset ?? 0) || 0;
+  const plateLip = data.plate_lip ?? 1.5;
+  const baseZ = data.wall_base_z ?? 0;
+  const plateGap = data.plate_gap ?? 0.25;
+
+  const vertices: Vec3[] = [];
+  const faces: Face[] = [];
+  const addVert = (p: Vec3) => { vertices.push(p); return vertices.length - 1; };
+
+  const inner = plateGap;              // recess wall, gap beyond plate edge
+  const ledgeIn = plateGap - plateLip; // ledge inner edge
+  const segs = skirtProfile(data);     // shapes the outer face, as for a skirt
+
+  for (const frames of wallLoopFrames(data)) {
+    const nLoop = frames.length;
+    const xyAt = (f: WallFrame, off: number): [number, number] =>
+      [f.bx + f.nx * (off + f.bulge) * f.mitre,
+       f.by + f.ny * (off + f.bulge) * f.mitre];
+
+    /**
+     * Ledge heights along one offset: each station sits on the plate's real
+     * underside. The station's own tangent plane drifts off a faceted
+     * underside — measured +1.5mm ABOVE it, i.e. digging into the plate, at
+     * the 1,0 / 2,0 corner of the staggered sample — so take the lower of the
+     * two, falling back to the plane where the point is not over the plate at
+     * all (the normal case for the ledge's outer edge, out in the plate_gap).
+     *
+     * The straight edge BETWEEN two stations can still bow up through a
+     * dipping underside (+0.44mm measured). Lowering the stations to pull that
+     * edge down was tried and removed: it costs up to 0.66mm of unnecessary
+     * drop — a visible notch in the ledge, at that same corner where this
+     * leaves it exactly flush — and it does not pay for itself, taking the
+     * staggered sample from 12 crossings to 16. See docs/skirt-off-walls.md.
+     */
+    // Ledge points across the width. Each takes the lowest real underside in
+    // its own neighbourhood, so both quads it borders stay under the plate.
+    //
+    // Where a sample finds no plate overhead it uses the NEAREST REAL SAMPLE
+    // rather than the station's tangent plane. A wide lip reaches under the
+    // switch cutouts — plate_lip 5 with a 14.7mm hole in a 19.05mm cell leaves
+    // only 1.5mm of border, so the ledge sits 3.5mm inside the cutout — and
+    // over a cutout there is nothing to sample. Extrapolating the tangent
+    // plane there sent the ledge wandering; continuing at the height of the
+    // surrounding plate keeps it flat and sane.
+    const K = ledgeStepCount(plateLip);
+    // Per station: the ledge offsets, and the height at each.
+    const ledgeOffsAt: number[][] = [];
+    const ledgeZs: number[][] =
+      Array.from({ length: K + 1 }, () => new Array<number>(frames.length));
+
+    frames.forEach((f, i) => {
+      const SCAN = 32;
+      const off: number[] = [];
+      const real: (number | null)[] = [];
+      for (let sIdx = 0; sIdx <= SCAN; sIdx++) {
+        const o = inner + (ledgeIn - inner) * (sIdx / SCAN);
+        const [x, y] = xyAt(f, o);
+        off.push(o);
+        real.push(f.sampleZ(x, y));
+      }
+
+      // Clamp the lip to the plate that is actually there. Walking inward the
+      // samples read null (out in the plate_gap), then real (the plate's
+      // border), then null again once past it — into a switch cutout, or off a
+      // narrow neck. plate_lip 5 with a 14.7mm hole in a 19.05mm cell leaves
+      // only 1.5mm of border, so the ledge would sit 3.5mm inside the cutout
+      // with no plate to follow and nothing to support. Stop at the end of the
+      // first solid run instead: a ledge only means anything under plate.
+      let firstValid = -1, lastValid = -1;
+      for (let sIdx = 0; sIdx <= SCAN; sIdx++) {
+        if (real[sIdx] !== null) {
+          if (firstValid < 0) firstValid = sIdx;
+          lastValid = sIdx;
+        } else if (firstValid >= 0) break;
+      }
+      const limit = lastValid >= 0 ? off[lastValid] : ledgeIn;
+
+      const offs = Array.from({ length: K + 1 },
+        (_, k) => inner + (limit - inner) * (k / K));
+      ledgeOffsAt.push(offs);
+
+      const heightAt = (o: number, lo: number, hi: number): number => {
+        const a = Math.min(lo, hi), b = Math.max(lo, hi);
+        let best: number | null = null;
+        for (let sIdx = 0; sIdx <= SCAN; sIdx++) {
+          const r = real[sIdx];
+          if (r === null || off[sIdx] < a - 1e-9 || off[sIdx] > b + 1e-9) continue;
+          if (best === null || r < best) best = r;
+        }
+        if (best === null) {          // nearest real sample anywhere on the run
+          let nearest = Infinity;
+          for (let sIdx = 0; sIdx <= SCAN; sIdx++) {
+            const r = real[sIdx];
+            if (r === null) continue;
+            const d = Math.abs(off[sIdx] - o);
+            if (d < nearest) { nearest = d; best = r; }
+          }
+        }
+        const [x0, y0] = xyAt(f, o);
+        const plane = f.planeZ(x0, y0);
+        return best === null ? plane : Math.min(plane, best - LEDGE_CLEARANCE);
       };
 
-      const inner = plateGap;             // recess wall, gap beyond plate edge
-      const ledgeIn = plateGap - plateLip; // ledge inner edge
+      for (let k = 0; k <= K; k++) {
+        ledgeZs[k][i] = heightAt(offs[k],
+          offs[Math.max(k - 1, 0)], offs[Math.min(k + 1, K)]);
+      }
+    });
 
-      const ring: Vec3[] = [
-        at(flangeOffset, baseZ), // 0 outer_bottom
-        at(flangeOffset, rim),   // 1 outer_top
-        at(inner, rim),          // 2 inner_top
-        atLedge(inner),          // 3 ledge_top (outer) on underside
-        atLedge(ledgeIn),        // 4 ledge_inner       on underside
-        at(ledgeIn, baseZ),      // 5 inner_bottom
-      ];
+    // One cross-section ring per station; see wallRingSize for the layout.
+    const rings: number[][] = [];
+    frames.forEach((f, i) => {
+      const at = (offset: number, z: number): Vec3 =>
+        [f.bx + f.nx * offset * f.mitre, f.by + f.ny * offset * f.mitre, z];
+
+      // Outer face bottom -> rim, following the skirt profile, then the recess.
+      // The recess opens from plate_gap at the rim to plate_gap + bulge at the
+      // ledge, so it tracks the plate's profile instead of standing vertically
+      // at its widest point.
+      const prof = wallOuterProfile(f, flangeOffset, baseZ, segs);
+      const ring: Vec3[] = [];
+      for (let k = prof.length - 1; k >= 0; k--) ring.push(at(prof[k][0], prof[k][1]));
+      ring.push(at(inner, f.rim));                    // inner_top
+      const offs = ledgeOffsAt[i];
+      for (let k = 0; k <= K; k++) {                   // ledge, outer -> inner
+        ring.push(at(offs[k] + f.bulge, ledgeZs[k][i]));
+      }
+      ring.push(at(offs[K] + f.bulge, baseZ));         // inner_bottom
       rings.push(ring.map(addVert));
-    }
+    });
 
-    const m = rings[0].length; // 6
+    const m = rings[0].length;
     for (let i = 0; i < nLoop; i++) {
       const a = rings[i];
       const b = rings[(i + 1) % nLoop];
@@ -1520,6 +2192,28 @@ export function buildWalls(keylistData: Keylist): Mesh {
   }
 
   return { vertices, faces };
+}
+
+/**
+ * The wall frame's OUTER footprint at wall_base_z, CCW (x, y) lists — the loop
+ * the frame's bottom face stands on, so a baseplate built from it meets the
+ * walls exactly. The wall-frame counterpart of skirtOuterRings.
+ */
+function wallOuterRings(keylistData: Keylist): Vec2[][] {
+  const data = resolveKeylist(keylistData);
+  const flangeOffset = (data.flange_offset ?? 0) || 0;
+  const baseZ = data.wall_base_z ?? 0;
+  const segs = skirtProfile(data);
+  // The bottom of the flared profile, so the baseplate matches the foot the
+  // frame actually stands on rather than its offset at the rim.
+  return wallLoopFrames(data).map(frames => {
+    const ring = frames.map(f => {
+      const prof = wallOuterProfile(f, flangeOffset, baseZ, segs);
+      const d = prof[prof.length - 1][0] * f.mitre;
+      return [f.bx + f.nx * d, f.by + f.ny * d] as Vec2;
+    });
+    return dropCollinear(ring);
+  });
 }
 
 export function buildWallsFromAny(data: Entry): Mesh {
@@ -1741,9 +2435,57 @@ function skirtOuterRings(keylistData: Keylist): Vec2[][] {
 }
 
 /**
- * Build the BASEPLATE: a flat bottom cover matching the fused skirt's outer
- * footprint at wall_base_z, extruded DOWNWARD by baseplate_thickness, with
- * screw clearance holes coaxial with each insert.
+ * Drop points that lie on the straight line through their neighbours.
+ *
+ * Stations added by subdivideForLedge sit exactly on the segment joining their
+ * neighbours — that is the point of it, so the ledge gains detail without the
+ * swept surfaces moving. On a straight run that makes them exactly collinear,
+ * which yields zero-area ears that the triangulator cannot clip, and the
+ * baseplate then fails to build. They carry no shape information, so the
+ * outline drops them; the polygon is geometrically identical.
+ */
+function dropCollinear(ring: Vec2[], tol = 1e-7): Vec2[] {
+  const n = ring.length;
+  if (n < 4) return ring;
+  const keep: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[(i - 1 + n) % n], b = ring[i], c = ring[(i + 1) % n];
+    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const scale = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (scale > 1e-12 && Math.abs(cross) / scale < tol) continue;
+    keep.push(b);
+  }
+  return keep.length >= 3 ? keep : ring;
+}
+
+/**
+ * The footprint the baseplate closes, whichever wall method is in use: the
+ * fused skirt's flared outline, or the wall frame's outer face.
+ *
+ * `strictHoles` asks for the whole clearance circle to land inside the
+ * outline, not just its centre. The wall frame hugs the plate edge, so a boss
+ * placed near the perimeter can produce a circle that CROSSES the outline —
+ * cutting that leaves a self-intersecting polygon that cannot be triangulated,
+ * and the baseplate fails to build. The skirt's flare pushes its footprint
+ * well clear of the bosses, so it keeps the original centre-only test and
+ * stays bit-identical to the Python core.
+ */
+function baseplateFootprint(
+  data: Keylist,
+): { rings: Vec2[][]; strictHoles: boolean } {
+  return (data.skirt ?? false)
+    ? { rings: skirtOuterRings(data), strictHoles: false }
+    : { rings: wallOuterRings(data), strictHoles: true };
+}
+
+/**
+ * Build the BASEPLATE: a flat bottom cover matching the case's outer footprint
+ * at wall_base_z, extruded DOWNWARD by baseplate_thickness, with screw
+ * clearance holes coaxial with each insert.
+ *
+ * With a fused skirt it follows the skirt's flared outline; with the separate
+ * wall frame it follows the frame's outer face, so the frame's bottom lands
+ * flush on it and the two merge into one solid on export.
  */
 export function buildBaseplate(keylistData: Keylist): Mesh {
   const data = resolveKeylist(keylistData);
@@ -1757,7 +2499,9 @@ export function buildBaseplate(keylistData: Keylist): Mesh {
   const vertices: Vec3[] = [];
   const faces: Face[] = [];
 
-  for (const ring of skirtOuterRings(data)) {
+  const { rings, strictHoles } = baseplateFootprint(data);
+
+  for (const ring of rings) {
     const nRing = ring.length;
     if (nRing < 3) continue;
 
@@ -1769,9 +2513,11 @@ export function buildBaseplate(keylistData: Keylist): Mesh {
       const ca = Math.cos(a), sa = Math.sin(a);
       const wx = ins.x + ins.hole_x * ca - ins.hole_y * sa;
       const wy = ins.y + ins.hole_x * sa + ins.hole_y * ca;
-      if (pointInPoly([wx, wy], ring)) {
-        holes.push(circlePts(wx, wy, ins.clearance_d / 2, segments));
-      }
+      const circle = circlePts(wx, wy, ins.clearance_d / 2, segments);
+      const fits = strictHoles
+        ? circle.every(p => pointInPoly(p, ring))
+        : pointInPoly([wx, wy], ring);
+      if (fits) holes.push(circle);
     }
 
     const { points: merged, tris } = triangulateWithHoles(ring, holes);
@@ -1824,6 +2570,273 @@ export function buildBaseplate(keylistData: Keylist): Mesh {
 
 export function buildBaseplateFromAny(data: Entry): Mesh {
   return buildBaseplate(resolveKeylist(data));
+}
+
+/** One lip-style station: where the wall starts, and its inner-face section. */
+export interface LipStation {
+  /** The plate's perimeter point here. */
+  x: number; y: number;
+  /** Outward XY normal. */
+  nx: number; ny: number;
+  /** Plate top and underside at this station. */
+  ztop: number; zbot: number;
+  /** Inner face as (outward offset, z), from the plate's edge to the lip. */
+  inner: Vec2[];
+}
+
+/**
+ * The lip-style wall, station by station, for measuring against.
+ *
+ * Exposed so a caller can ask the question that matters when a plate is hung in
+ * a well — does a key cap that overhangs the plate's edge still clear the wall
+ * beside it? — without having to re-derive the sweep.
+ */
+export function lipWallStations(keylistData: Keylist): LipStation[] {
+  const data = resolveKeylist(keylistData);
+  if (wallStyle(data) !== 'lip') return [];
+  const lip = lipSpec(data);
+  const segs = skirtProfile(data);
+
+  const { top, holeVertIds } = buildTopSurface(data);
+  const botPts = tiltAndOffset(data, top);
+  const pts = [...top.points];
+  const loops = perimeterLoops(top, holeVertIds);
+  if (loops.length === 0) return [];
+
+  const bboxArea = (lp: number[]) => {
+    const xs = lp.map(v => pts[v][0]);
+    const ys = lp.map(v => pts[v][1]);
+    return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  };
+  const areas = loops.map(bboxArea);
+  const amax = Math.max(...areas);
+
+  const out: LipStation[] = [];
+  for (let li = 0; li < loops.length; li++) {
+    if (areas[li] < 0.5 * amax) continue;
+    const [olp, nrms] = outwardNormalsXY(pts, loops[li]);
+    for (let i = 0; i < olp.length; i++) {
+      const vi = olp[i];
+      const p = pts[vi];
+      const rings = lipRings(lip, segs, p[2], botPts[vi][2]);
+      out.push({
+        x: p[0], y: p[1], nx: nrms[i][0], ny: nrms[i][1],
+        ztop: p[2], zbot: botPts[vi][2],
+        inner: rings.slice(0, segs.length + 1),
+      });
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ plank
+
+/** The case outline at the two levels a lip-style pocket needs, per loop. */
+interface PocketRings {
+  /** Wall above the shoulder: the lip's outline, plus clearance. */
+  lip: Vec2[];
+  /** Wall below the shoulder: the skirt's outline, plus clearance. */
+  skirt: Vec2[];
+}
+
+/**
+ * Pocket outlines, taken from the same tilted perimeter the case is swept from
+ * so the recess parallels the walls that drop into it.
+ *
+ * Each ring is offset along the per-vertex outward normal, exactly as the skirt
+ * offsets its own rings. A true polygon offset would part company with the case
+ * at corners; matching the method keeps the gap equal to `clearance` all the
+ * way round, which is what a fit needs.
+ */
+function lipPocketRings(
+  data: Keylist, lip: LipSpec, clearance: number, segs: SkirtSeg[],
+): { rings: PocketRings[]; reach: number; rebate: number } {
+  const { top, holeVertIds } = buildTopSurface(data);
+  const botPts = tiltAndOffset(data, top);
+  const pts = [...top.points];
+
+  // Both rings come from the same section the case is swept from, station by
+  // station: the rebate clears the lip's outer edge, the hole below it clears
+  // the wall wherever it reaches furthest at or under the shoulder. Below the
+  // shoulder the hole is a straight prism, so it routs in one pass with an
+  // ordinary straight bit.
+  const section = (vi: number) =>
+    lipRings(lip, segs, pts[vi][2], botPts[vi][2]);
+  let reach = 0, rebate = 0;
+  for (let vi = 0; vi < pts.length; vi++) {
+    const sec = section(vi);
+    reach = Math.max(reach, lipWallReach(lip, segs, sec));
+    rebate = Math.max(rebate, lipRebateReach(sec));
+  }
+
+  const loops = perimeterLoops(top, holeVertIds);
+  if (loops.length === 0) return { rings: [], reach, rebate };
+
+  const bboxArea = (lp: number[]) => {
+    const xs = lp.map(v => pts[v][0]);
+    const ys = lp.map(v => pts[v][1]);
+    return (Math.max(...xs) - Math.min(...xs)) *
+      (Math.max(...ys) - Math.min(...ys));
+  };
+  const areas = loops.map(bboxArea);
+  const amax = Math.max(...areas);
+
+  const rings: PocketRings[] = [];
+  for (let li = 0; li < loops.length; li++) {
+    if (areas[li] < 0.5 * amax) continue;   // interior hole: no pocket
+    const [olp, nrms] = outwardNormalsXY(pts, loops[li]);
+    const lipRing: Vec2[] = [];
+    const skirtRing: Vec2[] = [];
+    for (let i = 0; i < olp.length; i++) {
+      const p = pts[olp[i]];
+      const [nx, ny] = nrms[i];
+
+      // Only the CLEARANCE is mitred, not the whole offset. Pushing a corner
+      // vertex out by c along its bisector leaves the faces either side of it
+      // just c*cos(half-angle) apart, so a 90-degree corner keeps 0.71 of the
+      // gap asked for. Scaling by 1/cos restores it. The case's own rings are
+      // deliberately left unmitred, so the pocket still parallels the wall it
+      // has to accept — and because the correction rides on c alone, the same
+      // cap the wall frame uses barely comes into play.
+      const nxt = pts[olp[(i + 1) % olp.length]];
+      const ex = nxt[1] - p[1], ey = -(nxt[0] - p[0]);
+      const em = Math.hypot(ex, ey);
+      const cosT = em > 1e-12 ? (nx * ex + ny * ey) / em : 1;
+      const gap = clearance / Math.max(cosT, 0.85);
+
+      const sec = section(olp[i]);
+      const dSkirt = lipWallReach(lip, segs, sec) + gap;
+      const dLip = lipRebateReach(sec) + gap;
+      skirtRing.push([p[0] + nx * dSkirt, p[1] + ny * dSkirt]);
+      lipRing.push([p[0] + nx * dLip, p[1] + ny * dLip]);
+    }
+    rings.push({ lip: lipRing, skirt: skirtRing });
+  }
+  return { rings, reach, rebate };
+}
+
+/**
+ * The plank: a rectangular board with the rebated recess already taken out.
+ *
+ * Built directly rather than by subtracting a pocket solid. A pocket cut with
+ * CSG would open flush with the plank's top face, and a tool face exactly
+ * coplanar with a target face is the one case the boolean handles badly (see
+ * Known issues in the README). Extruding the two ring levels and capping them
+ * is also exact and costs nothing.
+ *
+ * Two levels, top to bottom: the rebate the lip drops into, down to the
+ * shoulder it bears on, and then a hole straight through the board for the
+ * case to hang in. The board's top face IS the top of the lip, so the keyboard
+ * finishes flush with the wood.
+ */
+export function buildPlank(keylistData: Keylist): Mesh {
+  const data = resolveKeylist(keylistData);
+  if (wallStyle(data) !== 'lip') {
+    throw new Error('the plank belongs to the lip wall style — set ' +
+      '"wall_style": "lip"');
+  }
+  const lip = lipSpec(data);
+  const segs = skirtProfile(data);
+  const clearance = Number(data.pocket_clearance ?? 0.3) || 0;
+  const { rings, reach, rebate } = lipPocketRings(data, lip, clearance, segs);
+  if (rings.length === 0) return { vertices: [], faces: [] };
+
+  // A wall that reaches out further below the shoulder than the lip does above
+  // it cannot pass through the rebate it has to drop into.
+  if (reach > rebate + 1e-9) {
+    throw new Error(
+      `the wall reaches out to ${reach.toFixed(2)} below the shoulder, past ` +
+      `the lip's own outer edge at ${rebate.toFixed(2)}, so the case cannot ` +
+      'drop into its own rebate. Reduce skirt_angle, or widen the lip.');
+  }
+
+  // The lip finishes flush, so the board's surface IS the top of the lip.
+  const topZ = lip.z + lip.thickness;
+  const thickness = Number(data.plank_thickness ?? 18) || 0;
+  if (thickness <= lip.thickness + 1e-9) {
+    throw new Error(
+      `plank_thickness (${thickness}) must be greater than lip_thickness ` +
+      `(${lip.thickness}) — the rebate alone takes the whole board, leaving ` +
+      'no shoulder to bear on.');
+  }
+  const botZ = topZ - thickness;
+
+  // --- Board outline ------------------------------------------------------
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rings) {
+    for (const [x, y] of r.lip) {
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const size = data.plank_size;
+  if (Array.isArray(size) && size.length >= 2) {
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const sx = Number(size[0]) / 2, sy = Number(size[1]) / 2;
+    if (!(sx > 0 && sy > 0)) throw new Error('plank_size must be two positive numbers');
+    x0 = cx - sx; x1 = cx + sx; y0 = cy - sy; y1 = cy + sy;
+  } else {
+    const margin = Number(data.plank_margin ?? 20) || 0;
+    x0 -= margin; x1 += margin; y0 -= margin; y1 += margin;
+  }
+  const rect: Vec2[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];   // CCW
+
+  // --- Assembly -----------------------------------------------------------
+  const vertices: Vec3[] = [];
+  const faces: Face[] = [];
+  const index = new Map<string, number>();
+  const v = (p: Vec2, z: number) => {
+    const k = `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)},${Math.round(z * 1e6)}`;
+    let i = index.get(k);
+    if (i === undefined) { i = vertices.length; index.set(k, i); vertices.push([p[0], p[1], z]); }
+    return i;
+  };
+  /** A ring walled between two heights, facing into the pocket it encloses. */
+  const pocketWall = (ring: Vec2[], zHi: number, zLo: number) => {
+    const w = signedArea(ring) > 0 ? [...ring].reverse() : [...ring];
+    for (let i = 0; i < w.length; i++) {
+      const j = (i + 1) % w.length;
+      faces.push([v(w[i], zHi), v(w[i], zLo), v(w[j], zLo), v(w[j], zHi)]);
+    }
+  };
+
+  // Top face: the board, with each pocket mouth as a hole.
+  const lipHoles = rings.map(r => r.lip);
+  const topCap = triangulateWithHoles(rect, lipHoles);
+  for (const [i, j, k] of topCap.tris) {
+    faces.push([v(topCap.points[i], topZ), v(topCap.points[j], topZ), v(topCap.points[k], topZ)]);
+  }
+
+  // Underside: the hole goes right through, so it is open here too.
+  const botCap = triangulateWithHoles(rect, rings.map(r => r.skirt));
+  for (const [i, j, k] of botCap.tris) {
+    faces.push([v(botCap.points[k], botZ), v(botCap.points[j], botZ), v(botCap.points[i], botZ)]);
+  }
+
+  // Outer edges of the board.
+  for (let i = 0; i < rect.length; i++) {
+    const j = (i + 1) % rect.length;
+    faces.push([v(rect[i], topZ), v(rect[i], botZ), v(rect[j], botZ), v(rect[j], topZ)]);
+  }
+
+  for (const r of rings) {
+    pocketWall(r.lip, topZ, lip.z);          // rebate, down to the shoulder
+    // The shoulder: the flat the lip lands on, facing up.
+    for (let i = 0; i < r.lip.length; i++) {
+      const j = (i + 1) % r.lip.length;
+      faces.push([v(r.lip[i], lip.z), v(r.lip[j], lip.z),
+        v(r.skirt[j], lip.z), v(r.skirt[i], lip.z)]);
+    }
+    pocketWall(r.skirt, lip.z, botZ);        // and straight through the board
+  }
+
+  return { vertices, faces };
+}
+
+export function buildPlankFromAny(data: Entry): Mesh {
+  return buildPlank(resolveKeylist(data));
 }
 
 // ------------------------------------------------------------ mesh utility

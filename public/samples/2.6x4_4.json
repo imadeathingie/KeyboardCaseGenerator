@@ -4,6 +4,13 @@
     "height": 5,
     "sk_comment": "skirt creates a unibody case, along with a baseplate.",
     "skirt": true,
+    "wall_comment": "wall-frame mode (skirt off): the plate drops into this frame.",
+    "vertical_edges": true,
+    "flange_offset": 3,
+    "flange_z": 0,
+    "plate_lip": 1.5,
+    "plate_gap": 0.6,
+    "wall_base_z": 0,
     "ik_comment": "specify keys to be removed from the layout, for example to create a thumb cluster.",
     "ignored_keys": [
         [7,0], [7,1], [7,2], [7,3],

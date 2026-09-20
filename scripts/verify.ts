@@ -6,8 +6,8 @@
  */
 import { readFileSync } from 'node:fs';
 import {
-  buildBaseplateFromAny, buildInsertsFromAny, buildShellFromAny,
-  buildWallsFromAny, isAssembly, resolveKeylist,
+  buildBaseplateFromAny, buildInsertsFromAny, buildPlankFromAny,
+  buildShellFromAny, buildWallsFromAny, isAssembly, resolveKeylist, wallStyle,
 } from '../src/core/core';
 import type { Entry, Mesh } from '../src/core/types';
 
@@ -56,6 +56,8 @@ for (const entry of entries) {
   console.log(`== ${name} keys=${kl.keylist.length}`);
   report('shell', buildShellFromAny(entry));
   report('inserts', buildInsertsFromAny(entry));
-  if (kl.skirt) report('baseplate', buildBaseplateFromAny(entry));
+  const style = wallStyle(kl);
+  if (style === 'lip') report('plank', buildPlankFromAny(entry));
+  else if (style === 'skirt') report('baseplate', buildBaseplateFromAny(entry));
   else report('walls', buildWallsFromAny(entry));
 }
