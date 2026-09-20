@@ -15,6 +15,8 @@ interface PartInstance {
 
 interface PartOptions {
   color?: number;
+  /** 0..1. Below 1 the part renders translucent. */
+  opacity?: number;
 }
 
 export enum RenderMode {
@@ -196,14 +198,22 @@ export class Viewer {
     const geometry = this.meshToGeometry(source);
     const color = new THREE.Color(options.color ?? 0xbcbcbc);
 
+    const opacity = options.opacity ?? 1;
     const material = new THREE.MeshStandardMaterial({
       color,
       roughness: 0.62,
       metalness: 0.08,
       wireframe: this.renderMode === RenderMode.Wireframe,
+      transparent: opacity < 1,
+      opacity,
+      // A translucent solid writing depth hides its own back faces and whatever
+      // is behind it, so a cutout preview would punch a hole in the case.
+      depthWrite: opacity >= 1,
+      side: opacity < 1 ? THREE.DoubleSide : THREE.FrontSide,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = opacity < 1 ? 1 : 0;
 
     const edgeGeometry = new THREE.EdgesGeometry(geometry, 30 /* crease angle */);
     const edgeMaterial = new THREE.LineBasicMaterial({
@@ -228,6 +238,20 @@ export class Viewer {
     };
     this.parts.set(id, part);
     this.objectMap.set(mesh, part);
+  }
+
+  /** Recolour a part in place — no geometry rebuild. */
+  public setPartStyle(id: string, color: number, opacity: number): void {
+    const part = this.parts.get(id);
+    if (!part) return;
+    part.material.color.setHex(color);
+    part.baseColor.setHex(color);
+    part.material.transparent = opacity < 1;
+    part.material.opacity = opacity;
+    part.material.depthWrite = opacity >= 1;
+    part.material.side = opacity < 1 ? THREE.DoubleSide : THREE.FrontSide;
+    part.material.needsUpdate = true;
+    part.object.renderOrder = opacity < 1 ? 1 : 0;
   }
 
   public removePartsExcept(keep: Set<string>) {
