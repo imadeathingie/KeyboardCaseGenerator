@@ -1,0 +1,37 @@
+{
+    "name": "bug-enclosed-cutout",
+    "bug_comment": "Demonstrates the fully-enclosed-cutout known issue. The plate slab spans z 2..10; the solid strip between key holes runs along x=9.525. 'buried (bug)' sits wholly inside that material and removes nothing at all, silently. 'through (control)' breaks both surfaces and cuts correctly.",
+    "width": 2,
+    "height": 2,
+    "hole_size": 10,
+    "thickness": 8,
+    "skirt": true,
+    "vertical_edges": true,
+    "flange_offset": 3,
+    "flange_z": 0,
+    "plate_lip": 1.5,
+    "plate_gap": 0.6,
+    "wall_base_z": 0,
+    "cutouts": [
+        {
+            "name": "buried (bug)",
+            "comment": "sphere r=2 at mid-slab, touching no surface - should remove 33.5mm3, removes 0",
+            "hull": false,
+            "targets": ["plate"],
+            "pos": [9.525, 0, 6],
+            "parts": [
+                { "shape": "sphere", "r": 2, "segments": 32 }
+            ]
+        },
+        {
+            "name": "through (control)",
+            "comment": "same strip, but passes right through - cuts correctly",
+            "hull": false,
+            "targets": ["plate"],
+            "pos": [9.525, -9.525, 6],
+            "parts": [
+                { "shape": "cylinder", "r": 2, "h": 40, "segments": 48 }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "name": "lip-in-plank",
+    "style_comment": "wall_style 'lip': the plate hangs from a lip whose top face is flush with the plank's surface, down through a hole cut right through the board.",
+    "width": 6,
+    "height": 4,
+    "thickness": 4,
+    "z_algo": "8",
+    "tent_angle": 4,
+    "wall_style": "lip",
+    "wall_thickness": 2,
+    "skirt_flange": 0,
+    "lip_comment": "bearing face at z=10 with a 2mm lip, so the plank's surface is z=12. The plate sits at z=8 and is tented 4 degrees, so the wall climbs to reach the lip at one end of the board and less at the other.",
+    "lip_z": 10,
+    "lip_width": 4,
+    "lip_thickness": 2,
+    "profile_comment": "skirt_angle is measured from the plate towards the lip: positive opens the well out as the wall rises, leaving room for key caps that overhang the plate edge.",
+    "skirt_mode": "angle",
+    "skirt_angle": 12,
+    "pocket_clearance": 0.3,
+    "plank_thickness": 18,
+    "plank_margin": 25,
+    "vertical_edges": true,
+    "plate_min_wall": 1,
+    "part_colors": {
+        "plank": "#a9793f",
+        "plate": "#b9c2cb"
+    }
+}

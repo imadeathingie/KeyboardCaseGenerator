@@ -1,0 +1,40 @@
+{
+    "name": "bug-coplanar-faces",
+    "bug_comment": "Demonstrates the coplanar-tool-face known issue. Cutout 'flush (bug)' has its +Y face exactly on the plate's outer face at y=8.75; 'clear (control)' is the same box pulled 1mm inboard. Only the flush one leaves open edges.",
+    "width": 8,
+    "height": 5,
+    "skirt": true,
+    "vertical_edges": true,
+    "flange_offset": 3,
+    "flange_z": 0,
+    "plate_lip": 1.5,
+    "plate_gap": 0.6,
+    "wall_base_z": 0,
+    "ignored_keys": [
+        [7,0], [7,1], [7,2], [7,3],
+        [6,0], [6,1], [6,2],
+        [0,4], [1,4], [2,4], [3,4], [4,4]
+    ],
+    "cutouts": [
+        {
+            "name": "flush (bug)",
+            "comment": "box spans y 0.75..8.75 - its +Y face lies IN the plate's outer face plane",
+            "hull": false,
+            "targets": ["plate"],
+            "pos": [30, 4.75, 5],
+            "parts": [
+                { "shape": "box", "size": [10, 8, 6] }
+            ]
+        },
+        {
+            "name": "clear (control)",
+            "comment": "identical box 1mm inboard, so no face is coplanar - this one is clean",
+            "hull": false,
+            "targets": ["plate"],
+            "pos": [90, 3.75, 5],
+            "parts": [
+                { "shape": "box", "size": [10, 8, 6] }
+            ]
+        }
+    ]
+}

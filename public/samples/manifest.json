@@ -1,8 +1,13 @@
 [
   {
     "id": "staggered-6x5",
-    "name": "Staggered 6×5",
+    "name": "Staggered 6\u00d75",
     "file": "staggered-6x5.json"
+  },
+  {
+    "id": "lip-in-plank",
+    "name": "Lip in a plank",
+    "file": "lip-in-plank.json"
   },
   {
     "id": "1.8x5",
@@ -43,5 +48,15 @@
     "id": "8.6x4_4",
     "name": "8.6x4_4",
     "file": "8.6x4_4.json"
+  },
+  {
+    "id": "bug-coplanar-faces",
+    "name": "Bug: coplanar cutout face",
+    "file": "bug-coplanar-faces.json"
+  },
+  {
+    "id": "bug-enclosed-cutout",
+    "name": "Bug: fully enclosed cutout",
+    "file": "bug-enclosed-cutout.json"
   }
 ]
