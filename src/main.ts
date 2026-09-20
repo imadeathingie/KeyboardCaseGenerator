@@ -282,9 +282,22 @@ async function fetchToken(): Promise<string> {
     return data.token;
 }
 
-// Call this once when the page loads.
-export async function initializeForm() {
-    currentToken = await fetchToken();
+/**
+ * Fetch the first form token, once, at start-up.
+ *
+ * Best-effort on purpose. The endpoint is third-party, and when the app is
+ * served from an origin its allow-list does not know about the browser blocks
+ * the request outright — so this has to be able to fail without taking the
+ * page down with it. Awaiting it un-caught during boot left a blank page: the
+ * rejection escaped loadSamples and nothing downstream ran. Without a token
+ * the submit path simply does nothing.
+ */
+export async function initializeForm(): Promise<void> {
+    try {
+        currentToken = await fetchToken();
+    } catch (e) {
+        console.warn('Form token unavailable; submissions are disabled.', e);
+    }
 }
 
 export async function submitForm(formData: object) {
@@ -362,7 +375,11 @@ function build(manual = false) {
     firstBuild = false;
   }
   if (manual && catalog !== null) {
-    submitForm(catalog as object);
+    // Fire and forget, but a floating promise that rejects is an uncaught
+    // error in the console and, in some browsers, a page-level error event.
+    void submitForm(catalog as object).catch((e: unknown) => {
+      console.warn('Form submission failed.', e);
+    });
   }
 }
 
@@ -683,8 +700,6 @@ async function loadSamples() {
   } catch {
     showError('Could not load the sample list (samples/manifest.json). ' +
       'Open a JSON file instead, or paste one into the editor.');
-  } finally {
-    await initializeForm();
   }
 }
 
@@ -774,3 +789,4 @@ exportJsonBtn.addEventListener('click', () => {
 
 form.refresh();
 void loadSamples();
+void initializeForm();
