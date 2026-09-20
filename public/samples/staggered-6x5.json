@@ -3,21 +3,17 @@
     "name": "Staggered_6x5",
     "width": 7,
     "height": 5,
-    "hole_size": 14.5,
+    "hole_size": 14.7,
     "key_1u": 19.05,
     "thickness": 4,
     "x_algo": "(x*key_1u+16-x) if (x >= 5 and y == 4) else x*key_1u",
     "y_algo": "-4*key_1u-14-(x-5)*0.5*key_1u if (x >= 5 and y == 4) else (-y)-y*key_1u-(12 if x == 0 else (10 if x == 1 else (2 if x == 2 else (4 if x >= 4 else 0))))",
-    "z_algo": "17 if (x == 5 and y == 4) else 12 if (x == 6) else 9 if (y == 2) else abs(y-2)*(5)+6",
-    "x_rot_algo": "x*3 if (x >= 5 and y == 4) else ((y-2)*(-10))",
-    "y_rot_algo": "20 if (x == 6) else 10 if (x == 5 and y == 4) else 0",
+    "z_algo": "(17 if (x == 5 and y == 4) else 12 if (x == 6) else 9 if (y == 2) else abs(y-2)*(5)+5 if (x==2 or x==3 and y >=2) else abs(y-2)*(5)+6) -2",
+    "x_rot_algo": "x*3 if x == 6 else x*2 if (x >= 5 and y == 4) else ((y-2)*(-10))",
+    "y_rot_algo": "15 if (x == 6) else 10 if (x == 5 and y == 4) else 0",
     "z_rot_algo": "-30 if (x == 6) else -20 if (x == 5 and y == 4) else 0",
-    "flange_offset": 3,
-    "flange_z": 0,
-    "plate_lip": 1.5,
-    "plate_gap": 0,
     "wall_base_z": 0,
-    "vertical_edges": false,
+    "constant_thickness_walls": true,
     "ignored_keys": [
       [
         0,
@@ -58,19 +54,28 @@
       }
     ],
     "u_diff": [],
-    "switch_profile": "asa",
     "wall_thickness": 2,
-    "skirt_flange": 1.4200000762939453,
-    "skirt_mode": "angle",
-    "skirt_angle": 30,
-    "skirt_flare": 0,
+    "skirt_flange": 2,
     "skirt": true,
-    "skirt_steps": 8,
-    "skirt_angle_end": 5,
-    "skirt_step_out": 0.5,
     "skirt_profile": [
       {
-        "fraction": 0.125,
+        "fraction": 1,
+        "angle": 60
+      },
+      {
+        "fraction": 0,
+        "out": 0.5
+      },
+      {
+        "fraction": 1,
+        "angle": 45
+      },
+      {
+        "fraction": 0,
+        "out": 0.5
+      },
+      {
+        "fraction": 1,
         "angle": 30
       },
       {
@@ -78,174 +83,233 @@
         "out": 0.5
       },
       {
-        "fraction": 0.125,
-        "angle": 26.42857142857143
+        "fraction": 1,
+        "angle": 15
       },
       {
-        "fraction": 0,
-        "out": 0.5
+        "fraction": 1,
+        "angle": -15
       },
       {
-        "fraction": 0.125,
-        "angle": 22.857142857142858
-      },
-      {
-        "fraction": 0,
-        "out": 0.5
-      },
-      {
-        "fraction": 0.125,
-        "angle": 19.285714285714285
-      },
-      {
-        "fraction": 0,
-        "out": 0.5
-      },
-      {
-        "fraction": 0.125,
-        "angle": 15.714285714285715
-      },
-      {
-        "fraction": 0,
-        "out": 0.5
-      },
-      {
-        "fraction": 0.125,
-        "angle": 12.142857142857142
-      },
-      {
-        "fraction": 0,
-        "out": 0.5
-      },
-      {
-        "fraction": 0.125,
-        "angle": 8
-      },
-      {
-        "fraction": 0,
-        "out": 0
-      },
-      {
-        "fraction": 0.125,
+        "fraction": 1,
         "angle": 0
       }
     ],
     "inserts": [
       {
-        "col": 3,
-        "row": 0,
-        "x": 0,
-        "y": 13,
-        "od": 8,
-        "id": 4,
-        "rot": 0,
-        "hole_x": 0,
-        "hole_y": 0,
-        "leg_0": 4,
-        "leg_1": 4,
-        "leg_2": 4
-      },
-      {
         "col": 0,
         "row": 0,
-        "x": -9,
-        "y": 10,
+        "x": -13.5,
+        "y": 13,
         "od": 8,
         "id": 4,
         "rot": 45,
         "hole_x": 0,
         "hole_y": 0,
-        "leg_0": 3.5,
-        "leg_1": 7,
+        "leg_0": 2.1,
+        "leg_1": 5.8,
+        "leg_2": 2.3
+      },
+      {
+        "col": 3,
+        "row": 0,
+        "x": -12.5,
+        "y": 15,
+        "od": 8,
+        "id": 4,
+        "rot": -1,
+        "hole_x": 0,
+        "hole_y": 0,
+        "leg_0": 1,
+        "leg_1": 4,
         "leg_2": 4
       },
       {
         "col": 0,
         "row": 3,
-        "x": -8,
-        "y": -8,
-        "od": 8,
-        "id": 4,
-        "rot": 135,
-        "hole_x": 0,
-        "hole_y": 0,
-        "leg_0": 4,
-        "leg_1": 8,
-        "leg_2": 4
-      },
-      {
-        "col": 2,
-        "row": 4,
-        "x": -9,
+        "x": -11,
         "y": -11,
         "od": 8,
         "id": 4,
         "rot": 135,
         "hole_x": 0,
         "hole_y": 0,
-        "leg_0": 3,
-        "leg_1": 7,
-        "leg_2": 3
+        "leg_0": 2,
+        "leg_1": 6,
+        "leg_2": 2
       },
       {
-        "col": 5,
+        "col": 2,
         "row": 4,
-        "x": -13,
-        "y": -8,
+        "x": -12.5,
+        "y": -13.5,
         "od": 8,
         "id": 4,
-        "rot": 175,
+        "rot": 132,
         "hole_x": 0,
         "hole_y": 0,
-        "leg_0": 4,
-        "leg_1": 4,
-        "leg_2": 4
+        "leg_0": 1.8,
+        "leg_1": 5.8,
+        "leg_2": 1.8
       },
       {
         "col": 4,
         "row": 4,
-        "x": 13,
-        "y": -14,
+        "x": 11,
+        "y": -17.4,
         "od": 8,
         "id": 4,
-        "rot": 175,
+        "rot": 160,
         "hole_x": 0,
         "hole_y": 0,
         "leg_0": 4,
         "leg_1": 4,
-        "leg_2": 4
-      },
-      {
-        "col": 5,
-        "row": 1,
-        "x": 10,
-        "y": 0,
-        "od": 8,
-        "id": 4,
-        "rot": 270,
-        "hole_x": 0,
-        "hole_y": 0,
-        "leg_0": 4,
-        "leg_1": 4,
-        "leg_2": 4
+        "leg_2": 4.5
       },
       {
         "col": 5,
         "row": 4,
-        "x": 12,
-        "y": 8,
+        "x": 16,
+        "y": 10.5,
         "od": 8,
         "id": 4,
-        "rot": 325,
+        "rot": 330,
         "hole_x": 0,
         "hole_y": 0,
         "leg_0": 4,
         "leg_1": 4,
-        "leg_2": 4
+        "leg_2": 3.4
+      },
+      {
+        "col": 5,
+        "row": 0,
+        "x": 14,
+        "y": 13.5,
+        "od": 8,
+        "id": 4,
+        "rot": 315,
+        "hole_x": 0,
+        "hole_y": 0,
+        "leg_0": 2.1,
+        "leg_1": 5.3,
+        "leg_2": 1.6
       }
     ],
     "baseplate_thickness": 2,
-    "insert_clearance_d": 3
+    "insert_clearance_d": 3,
+    "cutouts": [
+      {
+        "name": "cutout 1",
+        "parts": [
+          {
+            "shape": "cylinder",
+            "r": 2.5,
+            "h": 20,
+            "segments": 32,
+            "pos": [
+              -2.4,
+              0,
+              0
+            ],
+            "group": "1"
+          },
+          {
+            "shape": "cylinder",
+            "r": 2.5,
+            "h": 20,
+            "segments": 32,
+            "pos": [
+              2.4,
+              0,
+              0
+            ],
+            "group": "1"
+          },
+          {
+            "shape": "cylinder",
+            "r": 3,
+            "h": 5,
+            "segments": 32,
+            "pos": [
+              3,
+              0,
+              -10
+            ],
+            "group": "2"
+          },
+          {
+            "shape": "cylinder",
+            "r": 3,
+            "h": 5,
+            "segments": 32,
+            "pos": [
+              -3,
+              0,
+              -10
+            ],
+            "group": "2"
+          }
+        ],
+        "rot": [
+          90,
+          -8,
+          0
+        ],
+        "pos": [
+          92.5,
+          8,
+          6
+        ],
+        "targets": [
+          "plate",
+          "walls"
+        ],
+        "hull": false
+      }
+    ],
+    "additions": [
+      {
+        "name": "addition 1",
+        "parts": [
+          {
+            "shape": "cylinder",
+            "r": 3.75,
+            "h": 4,
+            "segments": 32,
+            "pos": [
+              -3.5,
+              0,
+              -8
+            ]
+          },
+          {
+            "shape": "cylinder",
+            "r": 3.75,
+            "h": 5,
+            "segments": 32,
+            "pos": [
+              3.5,
+              0,
+              -8
+            ]
+          }
+        ],
+        "rot": [
+          90,
+          -8,
+          0
+        ],
+        "pos": [
+          92.5,
+          7,
+          6
+        ],
+        "targets": [
+          "plate",
+          "walls"
+        ]
+      }
+    ]
   },
   {
     "name": "Staggered_6x5_Pair",
