@@ -170,8 +170,12 @@ export function generateKeylist(data: KeyboardDef): Keylist {
     'skirt_angle', 'skirt_flare', 'skirt_profile',
     'skirt_steps', 'skirt_angle_end', 'skirt_step_out',
     'constant_thickness_walls', 'switch_border',
+    'wall_style', 'lip_z', 'lip_width', 'lip_thickness',
+    'pocket_clearance', 'plank_thickness',
+    'plank_margin', 'plank_size',
     'tent_angle', 'pitch_angle', 'plate_min_wall',
-    'baseplate_thickness', 'insert_clearance_d', 'insert_hole_segments'];
+    'baseplate_thickness', 'insert_clearance_d', 'insert_hole_segments',
+    'cutouts', 'additions', 'part_colors'];
   for (const opt of OPTS) {
     if (opt in data) (out as Record<string, unknown>)[opt] = data[opt];
   }
