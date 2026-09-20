@@ -31,7 +31,7 @@ html, body {
 
 #app {
   display: grid;
-  grid-template-columns: 330px 1fr;
+  grid-template-columns: 400px 1fr;
   grid-template-rows: auto 1fr;
   grid-template-areas:
     'header header'
@@ -95,10 +95,8 @@ aside {
   background: var(--panel);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px;
-  overflow-y: auto;
   min-height: 0;
+  overflow: hidden;   /* the tab panel scrolls, not the whole column */
 }
 
 .field-label {
@@ -147,7 +145,7 @@ input:focus-visible {
 #editor {
   width: 100%;
   min-height: 220px;
-  flex: 1;
+  flex: 1 1 auto;
   resize: vertical;
   padding: 10px;
   font-family: var(--font-mono);
@@ -191,7 +189,49 @@ input:focus-visible {
   user-select: none;
 }
 .part-toggle:hover { border-color: var(--muted); }
-.part-toggle input { accent-color: var(--amber); }
+
+/* only the checkbox and name toggle visibility */
+.part-vis {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.part-vis input[type='checkbox'] { accent-color: var(--amber); flex: none; }
+
+.part-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* colour well: strip the browser chrome so it reads as a swatch */
+.swatch-input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(43, 38, 32, 0.4);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.swatch-input::-webkit-color-swatch-wrapper { padding: 0; }
+.swatch-input::-webkit-color-swatch { border: none; border-radius: 2px; }
+.swatch-input::-moz-color-swatch { border: none; border-radius: 2px; }
+
+.alpha-slider {
+  flex: 0 0 62px;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
 
 .swatch {
   width: 12px;
@@ -261,10 +301,390 @@ input:focus-visible {
     height: auto;
     min-height: 100%;
   }
-  aside { border-right: none; border-bottom: 1px solid var(--line); }
+  aside {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow: visible;
+  }
+  .side-scroll { overflow-y: visible; max-height: none; }
+  .keygrid { max-height: 60vh; }
   #editor { min-height: 160px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+}
+
+/* =================================================================== GUI
+   Tabbed board editor: tab strip, form controls and the SVG key map. */
+
+.side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 14px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); border-color: transparent; }
+.tab.is-active {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--text);
+  box-shadow: inset 0 2px 0 var(--amber);
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.side-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.panel[hidden] { display: none; }
+#panel-json { display: flex; flex-direction: column; height: 100%; }
+#panel-json #editor { min-height: 320px; }
+
+/* ------------------------------------------------------------ ff: fields */
+
+.ff-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.ff-group h3 {
+  margin: 0 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.ff-grouphead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ff-note {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.ff-note.ff-bad { color: var(--bad); }
+.ff-flag {
+  border-left: 2px solid var(--amber);
+  padding-left: 8px;
+}
+
+.ff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.ff-grid.ff-algos { grid-template-columns: minmax(0, 1fr); }
+
+.ff-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ff-row.ff-checkline, .ff-row.ff-expr, .ff-row.ff-text { grid-column: 1 / -1; }
+
+.ff-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ff-unit { opacity: 0.65; margin-left: 4px; text-transform: none; }
+
+.ff-row input[type='text'],
+.ff-row input[type='number'],
+.ff-row select,
+.ff-expr textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.ff-expr textarea {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.ff-numwrap { display: flex; align-items: center; gap: 8px; }
+.ff-numwrap input[type='number'] { flex: 1 1 60px; min-width: 0; }
+.ff-slider { flex: 1 1 80px; min-width: 0; accent-color: var(--amber); }
+
+.ff-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.ff-check input { accent-color: var(--amber); }
+
+.ff-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.ff-wide { width: 100%; }
+.ff-wide, .ff-cell {
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------- ff: list editors */
+
+.ff-rows { display: flex; flex-direction: column; gap: 8px; }
+
+.ff-card {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--ink);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ff-cardrow {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.ff-idx {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding-bottom: 6px;
+}
+
+.ff-cardhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.ff-cardhead > span:first-child { flex: 1; }
+
+.ff-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ff-cells > * { flex: 1 1 74px; }
+.ff-gen { align-items: flex-end; margin-bottom: 10px; }
+
+.ff-cellwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ff-cellwrap > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ff-cellwrap.ff-grow { flex: 1 1 100%; }
+.ff-sublabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ff-add {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ff-add:hover { border-color: var(--amber); color: var(--amber); }
+
+.ff-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ff-icon:hover { color: var(--bad); border-color: var(--bad); }
+
+.ff-empty {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.ff-more summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* ----------------------------------------------------------- kg: key map */
+
+.kg-host {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px;
+}
+.kg-readout {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--amber);
+}
+
+.keygrid {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  overflow: visible;
+}
+
+.kg-cell polygon {
+  stroke: rgba(43, 38, 32, 0.45);
+  stroke-width: 0.6;
+  cursor: pointer;
+  pointer-events: all;   /* hit-test the whole cell, painted fill or not */
+}
+.kg-cell:hover polygon { stroke: var(--amber); stroke-width: 1.2; }
+.kg-cell:focus-visible { outline: none; }
+.kg-cell:focus-visible polygon { stroke: var(--amber); stroke-width: 1.6; }
+
+.kg-off polygon {
+  stroke: rgba(43, 38, 32, 0.35);
+  stroke-dasharray: 2 2;
+  stroke-width: 0.5;
+}
+.kg-off:hover polygon { fill: rgba(185, 139, 62, 0.14); }
+.kg-off .kg-label { opacity: 0.35; }
+
+.kg-sel polygon { stroke: var(--amber); stroke-width: 1.6; }
+
+.kg-label {
+  font-family: var(--font-mono);
+  font-size: 5px;
+  fill: rgba(43, 38, 32, 0.6);
+  pointer-events: none;
+  user-select: none;
+}
+
+.kg-ins { fill: var(--amber); pointer-events: none; }
+.kg-boss {
+  fill: rgba(185, 139, 62, 0.25);
+  stroke: var(--amber);
+  stroke-width: 0.5;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------- cutout placement */
+
+.cutoutmap .cm-cell {
+  fill: rgba(43, 38, 32, 0.07);
+  stroke: rgba(43, 38, 32, 0.18);
+  stroke-width: 0.4;
+  pointer-events: none;
+}
+
+.cutoutmap { cursor: crosshair; }
+
+.cm-cut polygon {
+  fill: rgba(185, 139, 62, 0.35);
+  stroke: var(--amber);
+  stroke-width: 0.8;
+  cursor: pointer;
+  pointer-events: all;
+}
+.cm-cut:hover polygon { fill: rgba(185, 139, 62, 0.55); }
+.cm-cut.is-sel polygon {
+  fill: rgba(185, 139, 62, 0.7);
+  stroke-width: 1.6;
+  stroke-dasharray: 2 1.5;
+}
+.cm-cut:focus-visible { outline: none; }
+.cm-cut:focus-visible polygon { stroke-width: 1.8; }
+
+/* the cutout card currently being placed */
+.ff-card.is-sel {
+  border-color: var(--amber);
+  box-shadow: inset 2px 0 0 var(--amber);
 }
